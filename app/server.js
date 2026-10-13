@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send(`Hello from AKS POC! Version: ${process.env.APP_VERSION || "dev"}`);
+  res.send(`Hello from AKS POC with updated deployment! Version: ${process.env.APP_VERSION || "dev"}`);
 });
 
 app.get("/health", (req, res) => res.status(200).send("ok"));
