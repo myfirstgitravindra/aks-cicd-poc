@@ -1,0 +1,63 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ACR_NAME: acrakscicdpocravi01
+  IMAGE_NAME: poc-app
+  RESOURCE_GROUP: rg-aks-cicd-poc
+  CLUSTER_NAME: aks-cicd-poc
+  NAMESPACE: poc-ns
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name $ACR_NAME
+
+      - name: Build and push image
+        run: |
+          IMAGE=$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+          docker build -t $IMAGE .
+          docker push $IMAGE
+
+      - name: Install kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: 'v0.1.4'
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          use-kubelogin: 'true'
+
+      - name: Deploy to AKS
+        run: |
+          kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml
+          kubectl set image deployment/poc-app \
+            poc-app=$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }} \
+            -n $NAMESPACE
+          kubectl rollout status deployment/poc-app -n $NAMESPACE --timeout=180s
+
+      - name: Show service
+        run: kubectl get svc poc-svc -n $NAMESPACE
